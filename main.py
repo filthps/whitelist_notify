@@ -12,8 +12,11 @@ import urllib.request as request
 from urllib.error import HTTPError
 from winotify import Notification, audio
 
-INTERVAL_SEC = 10
+INTERVAL_SEC = 7
 ERRORS_COUNTER_TO_SHOW_MSG = 3  # Количество недоступных сервисов, необходимое для понимания ситуации. Дефолт 1
+TIMEOUT_MS = 2000.0
+IMAGES_PATH = os.path.join(os.getcwd(), "images")
+AUDIO_PATH = os.path.join(os.getcwd(), "audio")
 WEB_RESOURCE = (
     "https://pikabu.ru/",
     "https://github.com/",
@@ -23,8 +26,6 @@ WEB_RESOURCE = (
     "https://tbank.ru/"
 )  # Один или несколько сайтов, которых нет в белых списках
 ANY_WHITELIST_SITE = "https://vk.ru/"
-TIMEOUT_MS = 1000.0
-RINGTON_PATH = ""
 
 sites = cycle(WEB_RESOURCE)
 
@@ -33,42 +34,36 @@ def main(check_online=True):
     checked_sites = []
     while True:
         current_path = next(sites)
-        if has_internet(current_path, status=check_online):
-            if not check_online:
+        if has_internet(current_path):
+            if check_online:
                 checked_sites.append(current_path)
                 if checked_sites.__len__() == ERRORS_COUNTER_TO_SHOW_MSG:
                     show_notification(True, websites=tuple(checked_sites))
                     return
             else:
                 checked_sites.remove(current_path) if current_path in checked_sites else None
-                time.sleep(INTERVAL_SEC)
-                continue
-        if check_online:
-            checked_sites.append(current_path)
         else:
-            checked_sites.remove(current_path) if current_path in checked_sites else None
-            time.sleep(INTERVAL_SEC)
-            continue
-        if ERRORS_COUNTER_TO_SHOW_MSG == len(checked_sites):
-            if not final_check():
-                show_notification(False, websites=tuple(checked_sites))
-                return
+            if not check_online:
+                checked_sites.append(current_path)
+                if ERRORS_COUNTER_TO_SHOW_MSG == len(checked_sites):
+                    if not final_check():
+                        show_notification(False, websites=tuple(checked_sites))
+                        return
+                    else:
+                        checked_sites = []
+            else:
+                checked_sites.remove(current_path) if current_path in checked_sites else None
         time.sleep(INTERVAL_SEC)
 
 
-def has_internet(path: str, status=True) -> bool:
+def has_internet(path: str) -> bool:
     try:
         r = request.urlopen(path, timeout=TIMEOUT_MS)
-        print(r.__dict__)
     except HTTPError:
-        return not status
+        return False
     if r.msg == "OK":
-        if status:
-            return True
-        return False
-    if status:
-        return False
-    return True
+        return True
+    return False
 
 
 def final_check():
@@ -80,17 +75,22 @@ def final_check():
 
 def show_notification(state: bool, websites=tuple()):
     def get_str(u: typing.Iterable) -> str:
-        return r", \n".join([x[8:x.rindex(".")] for x in u])
+        return ", \r".join([x[8:x.rindex(".")] for x in u])
     if not websites:
         return
     end = "лись" if len(websites) > 1 else "лся"
     if state:
-        Notification(app_id="Интернет детектор by filthps",
-                     title="Дали интернет!", msg=f"Наконец-то. {get_str(websites)} откры{end}.", duration="long").show()
-        return
-    Notification(app_id="Интернет детектор by filthps",
-                 title="Белые списки!", msg=f"Охуеть. Опять эти пидоры всё отключили к хуям. "
-                                            f"{get_str(websites)} не откры{end}.", duration="long").show()
+        n = Notification(app_id="Интернет детектор by filthps",
+                         title="Дали интернет!", msg=f"Наконец-то. \r{get_str(websites)} откры{end}.", duration="long",
+                         icon=os.path.join(IMAGES_PATH, "wl-off.png"))
+        n.set_audio(audio.LoopingCall, loop=True)
+    else:
+        n = Notification(app_id="Интернет детектор by filthps",
+                         title="Белые списки!", msg=f"Охуеть. Опять эти пидоры всё отключили к хуям. \r"
+                                                    f"{get_str(websites)} не откры{end}.", duration="long",
+                         icon=os.path.join(IMAGES_PATH, "wl-on.png"))
+        n.set_audio(audio.LoopingAlarm10, loop=True)
+    n.show()
 
 
 def run():
