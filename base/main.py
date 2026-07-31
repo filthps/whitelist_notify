@@ -11,23 +11,17 @@ from itertools import cycle
 import urllib.request as request
 from urllib.error import HTTPError
 from winotify import Notification, audio
+from base.storage import get
 
-INTERVAL_SEC = 7
-ERRORS_COUNTER_TO_SHOW_MSG = 3  # Количество недоступных сервисов, необходимое для понимания ситуации. Дефолт 1
-TIMEOUT_MS = 2000.0
+INTERVAL_SEC = ...
+ERRORS_COUNTER_TO_SHOW_MSG = ...
+TIMEOUT_MS = ...
 IMAGES_PATH = os.path.join(os.getcwd(), "images")
 AUDIO_PATH = os.path.join(os.getcwd(), "audio")
-WEB_RESOURCE = (
-    "https://pikabu.ru/",
-    "https://github.com/",
-    "https://aviasales.ru/",
-    "https://sberbank.ru/",
-    "https://vseinstrumenti.ru/",
-    "https://tbank.ru/"
-)  # Один или несколько сайтов, которых нет в белых списках
-ANY_WHITELIST_SITE = "https://vk.ru/"
+WEB_RESOURCE = ...
+ANY_WHITELIST_SITE = ...
 
-sites = cycle(WEB_RESOURCE)
+sites = []
 
 
 def main(check_online=True):
@@ -93,8 +87,36 @@ def show_notification(state: bool, websites=tuple()):
     n.show()
 
 
+def get_current_state():
+    """
+    Определить состояние интернета на текущий момент.
+    True - Интернет полноценен
+    False - Действуют WL
+    """
+    return has_internet(next(sites))
+
+
+def reload_const():
+    global INTERVAL_SEC
+    global ERRORS_COUNTER_TO_SHOW_MSG
+    global TIMEOUT_MS
+    global WEB_RESOURCE
+    global ANY_WHITELIST_SITE
+    global sites
+
+    INTERVAL_SEC = get("text_interval")
+    ERRORS_COUNTER_TO_SHOW_MSG = get("text_error_counter")  # Количество недоступных сервисов, необходимое для понимания ситуации. Дефолт 1
+    TIMEOUT_MS = get("text_timeout")
+    WEB_RESOURCE = get("text_n_wl")  # Один или несколько сайтов, которых нет в белых списках
+    ANY_WHITELIST_SITE = get("text_any_wl")
+
+    sites = cycle(WEB_RESOURCE)
+
+
 def run():
-    initial_state = has_internet(next(sites))
+    reload_const()
+    is_valid()
+    initial_state = get_current_state()
     time.sleep(INTERVAL_SEC)
     main(not initial_state)
 
@@ -124,14 +146,9 @@ def is_valid():
         raise TypeError
     if not isinstance(ANY_WHITELIST_SITE, str):
         raise TypeError
-    regexp = re.compile(r"https://[a-z]+\.[a-z]+/")
+    regexp = re.compile(r"^https://\S+\.\S+/$")
     if not regexp.match(ANY_WHITELIST_SITE):
         raise ValueError
     for site in WEB_RESOURCE:
         if not regexp.match(site):
             raise ValueError(f"{site}. Сайт должен быть вида: https://site.zone/.")
-
-
-if __name__ == "__main__":
-    is_valid()
-    run()

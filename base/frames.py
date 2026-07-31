@@ -2,7 +2,7 @@ import re
 from tkinter import Text, IntVar
 from tkinter.ttk import Frame, Label, Button, Checkbutton
 from base.main import run, stop
-from storage import get, set_
+from base.storage import get, set_
 
 TEXT_SEP = ","
 
@@ -78,10 +78,14 @@ def validate_number_text(place: Text, inner: str, max_=float("inf"), type_=int):
     if not inner:
         set_validation_text_obj(place)
         return True
-    if not inner.isdigit():
-        try:
-            float(inner)
-        except ValueError:
+    if type_ is float:
+        if "." in inner:
+            try:
+                float(inner)
+            except ValueError:
+                set_validation_text_obj(place, is_valid=False)
+                return False
+        else:
             set_validation_text_obj(place, is_valid=False)
             return False
     try:
@@ -131,9 +135,32 @@ def save_number_values_if_valid(t, key: str, value: str, **kw):
     else:
         value = float(value)
     set_(key, value)
+    
+    
+class BaseOptions:
+    """ Универсальный набор событий, пригодится на многих Frame. """
+    @staticmethod
+    def _set_events_number_text(place: Text, key: str, is_float=False, max_value=float("inf")):
+        place.bind("<FocusOut>", lambda _: save_number_values_if_valid(place, key, get_text_from_text_obj(place),
+                                                                       max_=max_value, type_=float if is_float else int))
+        place.bind("<FocusIn>", lambda _: validate_number_text(place, get_text_from_text_obj(place),
+                                                               max_=max_value, type_=float if is_float else int))
+        place.bind("<Key>", lambda _: validate_number_text(place, get_text_from_text_obj(place),
+                                                           max_=max_value, type_=float if is_float else int))
+
+    @staticmethod
+    def _toggle_checkbox(place: IntVar, key: str):
+        set_(key, place.get())
+
+    @staticmethod
+    def _set_initial_text_input_values(p: Text, key: str, separator=TEXT_SEP):
+        val = get(key, "")
+        if isinstance(val, (tuple, list,)):
+            val = separator.join(val)
+        p.insert(1.0, val)
 
 
-class MainFrame(Frame):
+class MainFrame(Frame, BaseOptions):
     def __init__(self, tk, *args, **kwargs):
         super().__init__(tk, *args, **kwargs)
         tk.geometry("350x200")
@@ -144,7 +171,7 @@ class MainFrame(Frame):
         self.grid()
 
 
-class OptionsFrame(Frame):
+class OptionsFrame(Frame, BaseOptions):
     def __init__(self, tk, *a, **k):
         super().__init__(tk, *a, **k)
         tk.geometry("500x400")
@@ -158,57 +185,43 @@ class OptionsFrame(Frame):
         Label(self, text="Интервал проверки (сек):").grid(column=1, row=4)
         text_interval = Text(self, width=3, height=1)
         text_interval.grid(column=2, row=4)
+        Label(self, text="Таймаут ожидания ответа (мс):").grid(column=1, row=5)
+        text_timeout = Text(self, width=7, height=1)
+        text_timeout.grid(column=2, row=5)
         Label(self, text="Количество недоступных сервисов вне белых списков, \r"
               "прежде, чем будет проверяться доступность \r "
               "сервиса из белых списков. \r"
-              "(Не больше, чем всего сервисов):").grid(column=1, row=5)
+              "(Не больше, чем всего сервисов):").grid(column=1, row=6)
         text_error_counter = Text(self, width=2, height=1)
-        text_error_counter.grid(column=2, row=5)
+        text_error_counter.grid(column=2, row=6)
         hidden_launch_chbx = IntVar(value=get("launch_h", 0))
         Checkbutton(self, text="Запуск в свёрнутом виде", onvalue=1, offvalue=0,
                     variable=hidden_launch_chbx,
-                    command=lambda *_: self.__toggle_checkbox(hidden_launch_chbx, "launch_h")).grid(column=1, row=6)
+                    command=lambda *_: self._toggle_checkbox(hidden_launch_chbx, "launch_h")).grid(column=1, row=7)
         auto_launch_chbx = IntVar(value=get("auto_l", 0))
         Checkbutton(self, text="Автозагрузка", onvalue=1, offvalue=0,
                     variable=auto_launch_chbx,
-                    command=lambda *_: self.__toggle_checkbox(auto_launch_chbx, "auto_l")).grid(column=1, row=7)
-        Button(self, text="Назад", command=lambda: change_frame(tk, self, MainFrame)).grid(column=2, row=8)
-        self.__set_initial_text_input_values(text_n_wl, "text_n_wl")
-        self.__set_initial_text_input_values(text_any_wl, "text_any_wl")
-        self.__set_initial_text_input_values(text_interval, "text_interval")
-        self.__set_initial_text_input_values(text_error_counter, "text_error_counter")
-        self.__set_events_site_list(text_n_wl, "text_n_wl")
-        self.__set_events_site_list(text_any_wl, "text_any_wl", one_site=True)
-        self.__set_events_number_text(text_interval, "text_interval")
-        self.__set_events_number_text(text_error_counter, "text_error_counter",
-                                      max_value=len(get("text_n_wl", "")))
+                    command=lambda *_: self._toggle_checkbox(auto_launch_chbx, "auto_l")).grid(column=1, row=8)
+        Button(self, text="Назад", command=lambda: change_frame(tk, self, MainFrame)).grid(column=2, row=9)
+        self._set_initial_text_input_values(text_n_wl, "text_n_wl")
+        self._set_initial_text_input_values(text_any_wl, "text_any_wl")
+        self._set_initial_text_input_values(text_interval, "text_interval")
+        self._set_initial_text_input_values(text_error_counter, "text_error_counter")
+        self._set_initial_text_input_values(text_timeout, "text_timeout")
+        self._set_events_number_text(text_timeout, "text_timeout", is_float=True,
+                                     max_value=get("text_interval", float("inf")))
+        self._set_events_site_list(text_n_wl, "text_n_wl")
+        self._set_events_site_list(text_any_wl, "text_any_wl", one_site=True)
+        self._set_events_number_text(text_interval, "text_interval")
+        self._set_events_number_text(text_error_counter, "text_error_counter",
+                                     max_value=len(get("text_n_wl", "")))
         self.grid()
 
     @staticmethod
-    def __set_events_site_list(place: Text, key: str, one_site=False):
+    def _set_events_site_list(place: Text, key: str, one_site=False):
         place.bind("<FocusOut>", lambda _: save_text_value_if_valid(place, key, get_text_from_text_obj(place),
                                                                     one_item=one_site))
         place.bind("<FocusIn>", lambda _: validate_textzone_with_sites(place, get_text_from_text_obj(place),
                                                                        one_item=one_site))
         place.bind("<Key>", lambda _: validate_textzone_with_sites(place, get_text_from_text_obj(place),
                                                                    one_item=one_site))
-
-    @staticmethod
-    def __set_events_number_text(place: Text, key: str, is_float=False, max_value=float("inf")):
-        place.bind("<FocusOut>", lambda _: save_number_values_if_valid(place, key, get_text_from_text_obj(place),
-                                                                       max_=max_value, type_=float if is_float else int))
-        place.bind("<FocusIn>", lambda _: validate_number_text(place, get_text_from_text_obj(place),
-                                                               max_=max_value, type_=float if is_float else int))
-        place.bind("<Key>", lambda _: validate_number_text(place, get_text_from_text_obj(place),
-                                                           max_=max_value, type_=float if is_float else int))
-
-    @staticmethod
-    def __toggle_checkbox(place: IntVar, key: str):
-        set_(key, place.get())
-
-    @staticmethod
-    def __set_initial_text_input_values(p: Text, key: str, separator=TEXT_SEP):
-        val = get(key, "")
-        if isinstance(val, (tuple, list,)):
-            val = separator.join(val)
-        p.insert(1.0, val)
