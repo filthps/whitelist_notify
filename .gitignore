@@ -1,2 +1,4 @@
 build
 dist
+db.json
+main.spec
