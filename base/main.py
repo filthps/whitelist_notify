@@ -3,37 +3,82 @@
 что белые списки включены.
 """
 import sys
-import re
+import datetime
 import os
-import time
+import re
 import typing
+from threading import Thread, Lock, Event, current_thread
 from itertools import cycle
-import urllib.request as request
+from urllib.request import urlopen
 from urllib.error import HTTPError
 from winotify import Notification, audio
 from base.storage import get
 
-INTERVAL_SEC = ...
-ERRORS_COUNTER_TO_SHOW_MSG = ...
-TIMEOUT_MS = ...
+INTERVAL_SEC = get("text_interval")
+ERRORS_COUNTER_TO_SHOW_MSG = get("text_error_counter")
+TIMEOUT_MS = get("text_timeout")
+WEB_RESOURCE = get("text_n_wl")
+ANY_WHITELIST_SITE = get("text_any_wl")
 IMAGES_PATH = os.path.join(os.getcwd(), "images")
 AUDIO_PATH = os.path.join(os.getcwd(), "audio")
-WEB_RESOURCE = ...
-ANY_WHITELIST_SITE = ...
 
-sites = []
+sites = cycle([])
+worker_is_alive = True
 
 
-def main(check_online=True):
+def launch_callback(call):
+    def wrap(*a, main_thread=False, **kwargs):
+        if main_thread:
+            call(*a, **kwargs)
+            return
+        lock = Lock()
+        lock.acquire(blocking=True)
+        call(*a, **kwargs)
+        lock.release()
+    return wrap
+
+
+@launch_callback
+def send_state(callback, *args, other_message=""):
+    """ Сформировать строку состояния и передать её главному потоку, в ui, обновив виджет состояния. """
+    str_ = other_message or f'{" ---- ".join(map(str, args))}'
+    callback(str_)
+
+
+def main(callback=None, stop_callback=None):
+    @launch_callback
+    def stop_():
+        stop_callback()
+    check_online = not get_current_state()
+    if check_online:
+        send_state(callback, other_message="Ожидаем появление доступа в нормальный интернет...")
+    else:
+        send_state(callback, other_message="Доступ к нормальному интернету есть, \n мониторим момент введения белых списков")
+    Event().wait(INTERVAL_SEC)
     checked_sites = []
     while True:
+        if not worker_is_alive:
+            send_state(callback,
+                       other_message=f"< Процесс {current_thread().ident} убит> "
+                                     f"{datetime.datetime.now().strftime('%H:%M:%S')}", )
+            if stop_callback:
+                stop_()
+            sys.exit()
         current_path = next(sites)
-        if has_internet(current_path):
+        request = create_request(current_path)
+        if type(request) is HTTPError:
+            send_state(callback, current_path, str(request))
+        else:
+            send_state(callback, current_path, request.code)
+        if not isinstance(request, HTTPError) and request.msg == "OK":
             if check_online:
                 checked_sites.append(current_path)
                 if checked_sites.__len__() == ERRORS_COUNTER_TO_SHOW_MSG:
                     show_notification(True, websites=tuple(checked_sites))
-                    return
+                    stop_() if stop_callback else None
+                    send_state(callback,
+                               other_message=f"< Процесс {current_thread().ident} убит> "
+                                             f"{datetime.datetime.now().strftime('%H:%M:%S')}")
             else:
                 checked_sites.remove(current_path) if current_path in checked_sites else None
         else:
@@ -42,29 +87,31 @@ def main(check_online=True):
                 if ERRORS_COUNTER_TO_SHOW_MSG == len(checked_sites):
                     if not final_check():
                         show_notification(False, websites=tuple(checked_sites))
-                        return
+                        stop_() if stop_callback else None
+                        send_state(callback,
+                                   other_message=f"< Процесс {current_thread().ident} убит> "
+                                                 f"{datetime.datetime.now().strftime('%H:%M:%S')}", center=True)
                     else:
                         checked_sites = []
             else:
                 checked_sites.remove(current_path) if current_path in checked_sites else None
-        time.sleep(INTERVAL_SEC)
+        Event().wait(INTERVAL_SEC)
 
 
-def has_internet(path: str) -> bool:
+def create_request(path: str):
     try:
-        r = request.urlopen(path, timeout=TIMEOUT_MS)
-    except HTTPError:
-        return False
-    if r.msg == "OK":
-        return True
-    return False
+        r = urlopen(path, timeout=TIMEOUT_MS)
+    except HTTPError as error:
+        return error
+    return r
 
 
-def final_check():
+def final_check() -> bool:
     """ Допустим все наши проверки на доступность ресурсов оказались ложны.
      Это, само по себе, ничего не значит, - возможно, просто отключен интернет.
      Тогда нужно проверить доступность любого сайта, который есть в белых списках """
-    return has_internet(ANY_WHITELIST_SITE)
+    request = create_request(ANY_WHITELIST_SITE)
+    return not isinstance(request, HTTPError) and request.msg == "OK"
 
 
 def show_notification(state: bool, websites=tuple()):
@@ -93,10 +140,11 @@ def get_current_state():
     True - Интернет полноценен
     False - Действуют WL
     """
-    return has_internet(next(sites))
+    r = create_request(next(sites))
+    return type(r) is not HTTPError and r.msg == "OK"
 
 
-def reload_const():
+def load_const():
     global INTERVAL_SEC
     global ERRORS_COUNTER_TO_SHOW_MSG
     global TIMEOUT_MS
@@ -105,24 +153,28 @@ def reload_const():
     global sites
 
     INTERVAL_SEC = get("text_interval")
-    ERRORS_COUNTER_TO_SHOW_MSG = get("text_error_counter")  # Количество недоступных сервисов, необходимое для понимания ситуации. Дефолт 1
+    ERRORS_COUNTER_TO_SHOW_MSG = get("text_error_counter")
     TIMEOUT_MS = get("text_timeout")
-    WEB_RESOURCE = get("text_n_wl")  # Один или несколько сайтов, которых нет в белых списках
+    WEB_RESOURCE = get("text_n_wl")
     ANY_WHITELIST_SITE = get("text_any_wl")
-
     sites = cycle(WEB_RESOURCE)
 
 
-def run():
-    reload_const()
-    is_valid()
-    initial_state = get_current_state()
-    time.sleep(INTERVAL_SEC)
-    main(not initial_state)
+def run(callback=None, stop_callback=None) -> typing.Optional[Thread]:
+    load_const()
+    try:
+        is_valid()
+    except Exception as exp:
+        send_state(callback, other_message=exp.__str__(), main_thread=True)
+        return
+    process = Thread(target=lambda: main(callback=callback, stop_callback=stop_callback))
+    process.start()
+    return process
 
 
 def stop():
-    sys.exit()
+    global worker_is_alive
+    worker_is_alive = False
 
 
 def is_valid():
