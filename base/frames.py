@@ -1,5 +1,7 @@
 import re
 import datetime
+import threading
+import typing
 from typing import Union
 from tkinter import Text, IntVar, StringVar
 from tkinter.ttk import Frame, Label, Button, Checkbutton, Radiobutton
@@ -142,6 +144,14 @@ def save_number_values_if_valid(t, key: str, value: str, **kw):
     
 class BaseOptions:
     """ Универсальный набор событий, пригодится на многих Frame. """
+    def __init__(self, tk, *args, **kwargs):
+        def handle_window_buttons():
+            """ Из-за функционала связанного с иконкой трея придётся изменить стандартное поведение кнопок [ _ [] X ] окна """
+            is_active_task = get("active_task")
+            minimize(tk, reload_menu=not is_active_task, options_disabled=is_active_task)
+        tk.protocol("WM_DELETE_WINDOW", handle_window_buttons)
+        super().__init__(tk, *args, **kwargs)
+
     @staticmethod
     def _set_events_number_text(place: Text, key: str, is_float=False, max_value=float("inf")):
         place.bind("<FocusOut>", lambda _: save_number_values_if_valid(place, key, get_text_from_text_obj(place),
@@ -163,18 +173,23 @@ class BaseOptions:
         p.insert(1.0, val)
 
 
-class MainFrame(Frame, BaseOptions):
-    worker = None
-
+class MainFrame(BaseOptions, Frame):
     def __init__(self, tk, *args, **kwargs):
+        self.worker: typing.Optional[threading.Thread] = None
+
         def run_task():
             if self.worker is not None:
                 raise RuntimeError("Один процесс уже запущен")
-            worker = run(callback=self.move_state_window, stop_callback=unlock_ui)
-            self.worker = worker
+
+            def stop_callback():
+                unlock_ui()
+                create_icon_or_update(tk, reload_menu=True, options_disabled=False)
+            worker = run(callback=self.move_state_window, stop_callback=stop_callback)
             self.move_state_window(f"< Процесс {worker.ident} запущен > {datetime.datetime.now().strftime('%H:%M:%S')}")
             tk.geometry("560x275")
             lock_ui()
+            create_icon_or_update(tk, reload_menu=True, options_disabled=True)
+            self.worker = worker
 
         def stop_task():
             if self.worker is None:
@@ -183,7 +198,6 @@ class MainFrame(Frame, BaseOptions):
             self.stop_button.config(state="disabled")
             self.move_state_window(f"< Процесс {self.worker.ident} ожидание завершения > "
                                    f"{datetime.datetime.now().strftime('%H:%M:%S')}")
-            self.worker = None
 
         def lock_ui():
             self.launch_button.config(state="disabled")
@@ -217,12 +231,12 @@ class MainFrame(Frame, BaseOptions):
         place.config(state="disabled")
 
     def __get_state_window(self):
-        place = Text(self, height=15, width=50)
+        place = Text(self, height=9, width=50)
         place.config(background="#CCC")
         return place
 
 
-class OptionsFrame(Frame, BaseOptions):
+class OptionsFrame(BaseOptions, Frame):
     def __init__(self, tk, *a, **k):
         super().__init__(tk, *a, **k)
         tk.geometry("500x360")
@@ -277,7 +291,7 @@ class OptionsFrame(Frame, BaseOptions):
                                                                    one_item=one_site))
 
 
-class NotifyOptionsFrame(Frame, BaseOptions):
+class NotifyOptionsFrame(BaseOptions, Frame):
     def __init__(self, tk, *a, **k):
         super().__init__(tk, *a, **k)
         tk.geometry("500x90")

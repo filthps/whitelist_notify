@@ -1,19 +1,23 @@
 import sys
 import os
+from typing import Optional
 from pystray import Icon, Menu, MenuItem
 from PIL import Image
 from base.main import IMAGES_PATH
 
+icon: Optional[Icon] = None
 
-def minimize(tk, **kwargs):
-    icon = create_icon(tk, **kwargs)
-    icon.run()
+
+def minimize(tk, reload_menu=True, options_disabled=False):
     tk.withdraw()
+    create_icon_or_update(tk, reload_menu=reload_menu, options_disabled=options_disabled)
 
 
-def open_from_tray(tk, frame):
-    frame = frame(tk)
-    frame.grid()
+def open_from_tray(tk, new_frame=None):
+    tk.deiconify()
+    if new_frame is not None:
+        [any_children.destroy() for any_children in tk.winfo_children()]
+        new_frame(tk).grid()
     tk.eval('tk::PlaceWindow . center')
     tk.mainloop()
 
@@ -21,16 +25,28 @@ def open_from_tray(tk, frame):
 def close_app(tk, icon):
     icon.stop()
     tk.destroy()
-    sys.exit()
 
 
-def create_icon(tk, main_frame=None, options_frame=None) -> Icon:
-    menu = Menu(
-        MenuItem("Открыть", lambda: open_from_tray(tk, main_frame), default=True),
-        MenuItem("Настройки", lambda: open_from_tray(tk, options_frame)),
-        MenuItem("Выход", lambda: close_app(tk, icon))
-    )
-    image = Image.open(os.path.join(IMAGES_PATH, "tray.png"))
-    image.resize((10, 10,), Image.NEAREST)
-    icon = Icon("Детектор белых списков", icon=image, title="Детектор белых списков", menu=menu)
-    return icon
+def create_icon_or_update(tk, options_disabled=False, reload_menu=False) -> Icon:
+    from base.frames import OptionsFrame
+    global icon
+    if icon is None:
+        menu = Menu(
+            MenuItem("Открыть", lambda: open_from_tray(tk), default=True),
+            MenuItem("Настройки", lambda: open_from_tray(tk, new_frame=OptionsFrame),
+                     enabled=not options_disabled),
+            MenuItem("Выход", lambda: close_app(tk, icon))
+        )
+        image = Image.open(os.path.join(IMAGES_PATH, "tray.png"))
+        image.resize((10, 10,), Image.NEAREST)
+        icon = Icon("Детектор белых списков", icon=image, title="Детектор белых списков", menu=menu)
+        icon.run()
+        return
+    if reload_menu:
+        icon.menu = Menu(
+            MenuItem("Открыть", lambda: open_from_tray(tk), default=True),
+            MenuItem("Настройки", lambda: open_from_tray(tk, new_frame=OptionsFrame),
+                     enabled=not options_disabled),
+            MenuItem("Выход", lambda: close_app(tk, icon))
+        )
+        icon.update_menu()
