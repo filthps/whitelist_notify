@@ -10,9 +10,9 @@ import typing
 from threading import Thread, Lock, Event, current_thread
 from itertools import cycle
 from urllib.request import urlopen
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from winotify import Notification, audio
-from base.storage import get
+from base.storage import get, set_
 
 INTERVAL_SEC = get("text_interval")
 ERRORS_COUNTER_TO_SHOW_MSG = get("text_error_counter")
@@ -63,14 +63,15 @@ def main(callback=None, stop_callback=None):
                                      f"{datetime.datetime.now().strftime('%H:%M:%S')}", )
             if stop_callback:
                 stop_()
+            set_("active_task", False)
             sys.exit()
         current_path = next(sites)
         request = create_request(current_path)
-        if type(request) is HTTPError:
+        if isinstance(request, (URLError, HTTPError,)):
             send_state(callback, current_path, str(request))
         else:
             send_state(callback, current_path, request.code)
-        if not isinstance(request, HTTPError) and request.msg == "OK":
+        if not isinstance(request, (HTTPError, URLError,)) and request.msg == "OK":
             if check_online:
                 checked_sites.append(current_path)
                 if checked_sites.__len__() == ERRORS_COUNTER_TO_SHOW_MSG:
@@ -102,6 +103,8 @@ def create_request(path: str):
     try:
         r = urlopen(path, timeout=TIMEOUT_MS)
     except HTTPError as error:
+        return error
+    except URLError as error:
         return error
     return r
 
@@ -169,6 +172,7 @@ def run(callback=None, stop_callback=None) -> typing.Optional[Thread]:
         return
     process = Thread(target=lambda: main(callback=callback, stop_callback=stop_callback))
     process.start()
+    set_("active_task", True)
     return process
 
 
