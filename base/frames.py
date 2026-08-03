@@ -7,6 +7,8 @@ from tkinter import Text, IntVar, StringVar
 from tkinter.ttk import Frame, Label, Button, Checkbutton, Radiobutton
 from base.main import run, stop
 from base.storage import get, set_
+from base.tray import minimize, create_icon_or_update
+from base.autostart import autostart as set_autostart
 
 TEXT_SEP = ","
 
@@ -163,7 +165,9 @@ class BaseOptions:
 
     @staticmethod
     def _toggle_checkbox(place: Union[IntVar, StringVar], key: str):
-        set_(key, place.get())
+        value = place.get()
+        set_(key, value)
+        return value
 
     @staticmethod
     def _set_initial_text_input_values(p: Text, key: str, separator=TEXT_SEP):
@@ -174,7 +178,7 @@ class BaseOptions:
 
 
 class MainFrame(BaseOptions, Frame):
-    def __init__(self, tk, *args, **kwargs):
+    def __init__(self, tk, *args, init_run_task=False, **kwargs):
         self.worker: typing.Optional[threading.Thread] = None
 
         def run_task():
@@ -217,6 +221,9 @@ class MainFrame(BaseOptions, Frame):
         self.stop_button.grid(column=2, row=2)
         self.options_button.grid(column=3, row=2)
         self.state_w_inner = None
+        if init_run_task:
+            run_task()
+            return
         unlock_ui()
 
     def move_state_window(self, new_msg, size=6):
@@ -238,6 +245,9 @@ class MainFrame(BaseOptions, Frame):
 
 class OptionsFrame(BaseOptions, Frame):
     def __init__(self, tk, *a, **k):
+        def autostart():
+            value = self._toggle_checkbox(auto_launch_chbx, "auto_l")
+            set_autostart(state=value)
         super().__init__(tk, *a, **k)
         tk.geometry("500x360")
         Label(self, text="Сайты, которых нет в белых списках:").grid(column=1, row=1)
@@ -261,11 +271,11 @@ class OptionsFrame(BaseOptions, Frame):
         hidden_launch_chbx = IntVar(value=get("launch_h", 0))
         Checkbutton(self, text="Запуск в свёрнутом виде", onvalue=1, offvalue=0,
                     variable=hidden_launch_chbx,
-                    command=lambda *_: self._toggle_checkbox(hidden_launch_chbx, "launch_h")).grid(column=1, row=6)
+                    command=lambda: self._toggle_checkbox(hidden_launch_chbx, "launch_h")).grid(column=1, row=6)
         auto_launch_chbx = IntVar(value=get("auto_l", 0))
         Checkbutton(self, text="Автозагрузка", onvalue=1, offvalue=0,
                     variable=auto_launch_chbx,
-                    command=lambda *_: self._toggle_checkbox(auto_launch_chbx, "auto_l")).grid(column=1, row=7)
+                    command=autostart).grid(column=1, row=7)
         Button(self, text="Дополнительно", command=lambda: change_frame(tk, self, NotifyOptionsFrame)).grid(column=1, row=8)
         Button(self, text="Главная", command=lambda: change_frame(tk, self, MainFrame)).grid(column=2, row=8)
         self._set_initial_text_input_values(text_n_wl, "text_n_wl")
