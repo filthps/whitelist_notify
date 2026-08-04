@@ -1,4 +1,3 @@
-import sys
 import os
 from typing import Optional
 from pystray import Icon, Menu, MenuItem
@@ -18,7 +17,6 @@ def open_from_tray(tk, new_frame=None):
     if new_frame is not None:
         [any_children.destroy() for any_children in tk.winfo_children()]
         new_frame(tk).grid()
-    tk.eval('tk::PlaceWindow . center')
     tk.mainloop()
 
 
@@ -27,10 +25,16 @@ def close_app(tk, icon):
     tk.destroy()
 
 
-def create_icon_or_update(tk, options_disabled=False, reload_menu=False) -> Icon:
+def create_icon_or_update(tk, create_icon=True, options_disabled=False, reload_menu=False) -> Icon:
+    """ Создать иконку в трее или изменить меню иконки трея
+     ВНИМАНИЕ: метод run почему-то блокирует дольнейшее выполнение кода в потоке,
+     поэтому вызывать данный метод всегда последним, ибо после строки вызова этой функции - ничего выполнено не будет!
+      """
     from base.frames import OptionsFrame
     global icon
     if icon is None:
+        if not create_icon:
+            return
         menu = Menu(
             MenuItem("Открыть", lambda: open_from_tray(tk), default=True),
             MenuItem("Настройки", lambda: open_from_tray(tk, new_frame=OptionsFrame),

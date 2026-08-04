@@ -21,6 +21,8 @@ WEB_RESOURCE = get("text_n_wl")
 ANY_WHITELIST_SITE = get("text_any_wl")
 IMAGES_PATH = os.path.join(os.getcwd(), "images")
 AUDIO_PATH = os.path.join(os.getcwd(), "audio")
+IS_LONG_NOTI = get("is_long_song")
+NOTI_VOLUME = get("volume")
 
 sites = cycle([])
 worker_is_alive = True
@@ -41,14 +43,17 @@ def launch_callback(call):
 @launch_callback
 def send_state(callback, *args, other_message=""):
     """ Сформировать строку состояния и передать её главному потоку, в ui, обновив виджет состояния. """
-    str_ = other_message or f'{" ---- ".join(map(str, args))}'
+    str_ = other_message or " ---- ".join(map(str, args))
     callback(str_)
 
 
 def main(callback=None, stop_callback=None):
+    global worker_is_alive
+    worker_is_alive = True
+
     @launch_callback
     def stop_():
-        stop_callback()
+        stop_callback() if callable(stop_callback) else None
     check_online = not get_current_state()
     if check_online:
         send_state(callback, other_message="Ожидаем появление доступа в нормальный интернет...")
@@ -114,7 +119,7 @@ def final_check() -> bool:
      Это, само по себе, ничего не значит, - возможно, просто отключен интернет.
      Тогда нужно проверить доступность любого сайта, который есть в белых списках """
     request = create_request(ANY_WHITELIST_SITE)
-    return not isinstance(request, HTTPError) and request.msg == "OK"
+    return not isinstance(URLError, HTTPError) and request.msg == "OK"
 
 
 def show_notification(state: bool, websites=tuple()):
@@ -125,15 +130,17 @@ def show_notification(state: bool, websites=tuple()):
     end = "лись" if len(websites) > 1 else "лся"
     if state:
         n = Notification(app_id="Интернет детектор by filthps",
-                         title="Дали интернет!", msg=f"Наконец-то. \r{get_str(websites)} откры{end}.", duration="long",
+                         title="Дали интернет!", msg=f"Наконец-то. \r{get_str(websites)} откры{end}.",
                          icon=os.path.join(IMAGES_PATH, "wl-off.png"))
-        n.set_audio(audio.LoopingCall, loop=True)
     else:
         n = Notification(app_id="Интернет детектор by filthps",
                          title="Белые списки!", msg=f"Охуеть. Опять эти пидоры всё отключили к хуям. \r"
-                                                    f"{get_str(websites)} не откры{end}.", duration="long",
+                                                    f"{get_str(websites)} не откры{end}.",
                          icon=os.path.join(IMAGES_PATH, "wl-on.png"))
-        n.set_audio(audio.LoopingAlarm10, loop=True)
+    if NOTI_VOLUME == "1":
+        n.set_audio(audio.LoopingAlarm10, IS_LONG_NOTI)
+    if NOTI_VOLUME == "2":
+        n.set_audio(audio.Silent, False)
     n.show()
 
 
@@ -144,7 +151,7 @@ def get_current_state():
     False - Действуют WL
     """
     r = create_request(next(sites))
-    return type(r) is not HTTPError and r.msg == "OK"
+    return not isinstance(r, (HTTPError, URLError,)) and r.msg == "OK"
 
 
 def load_const():
@@ -153,6 +160,8 @@ def load_const():
     global TIMEOUT_MS
     global WEB_RESOURCE
     global ANY_WHITELIST_SITE
+    global IS_LONG_NOTI
+    global NOTI_VOLUME
     global sites
 
     INTERVAL_SEC = get("text_interval")
@@ -160,6 +169,8 @@ def load_const():
     TIMEOUT_MS = get("text_timeout")
     WEB_RESOURCE = get("text_n_wl")
     ANY_WHITELIST_SITE = get("text_any_wl")
+    IS_LONG_NOTI = get("is_long_song")
+    NOTI_VOLUME = get("volume", "1")
     sites = cycle(WEB_RESOURCE)
 
 

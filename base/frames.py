@@ -1,7 +1,7 @@
-import re
 import datetime
 import threading
 import typing
+import tkinter
 from typing import Union
 from tkinter import Text, IntVar, StringVar
 from tkinter.ttk import Frame, Label, Button, Checkbutton, Radiobutton
@@ -9,139 +9,33 @@ from base.main import run, stop
 from base.storage import get, set_
 from base.tray import minimize, create_icon_or_update
 from base.autostart import autostart as set_autostart
+from base.form_tools import save_text_value_if_valid, save_number_values_if_valid, get_text_from_text_obj, \
+    validate_number_text, validate_textzone_with_sites, get_error_string_from_settings, get_alert_window_size, TEXT_SEP
 
-TEXT_SEP = ","
+worker: typing.Optional[threading.Thread] = None
+
+
+def center_window(main: tkinter, width=500, height=500):
+    screen_w, screen_h = main.winfo_screenwidth(), main.winfo_screenheight()
+    pos_x, pos_y = (screen_w - width) // 2, (screen_h - height) // 2
+    main.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
+
+
+def show_message_window(main, text="", title="", size="100x50"):
+    """ Вывести окно с текстом """
+    new_window = tkinter.Toplevel(main, takefocus=True)
+    new_window.title(title)
+    new_window.geometry(size)
+    label = tkinter.Label(new_window, text=text or get_error_string_from_settings())
+    label.pack(pady=20)
+    x, y = size.split("x")
+    center_window(new_window, width=int(x), height=int(y))
 
 
 def change_frame(parent, old_frame, new_frame, **show_kwargs):
     old_frame.__class__.destroy(old_frame)
     fr = new_frame(parent)
     fr.grid(**show_kwargs)
-
-
-def get_text_from_text_obj(t: Text):
-    """ get: Первый аргумент: начать чтение с первой строки и нулевого символа;
-     Второй: читать до конца. """
-    if not isinstance(t, Text):
-        raise TypeError
-    return t.get("1.0", "end-1c")
-
-
-def set_validation_text_obj(t: Text, is_valid=True):
-    """ Подсветить текстовую зону красной рамкой, если данные невалидны,
-     убрать рамку, если валидны. """
-    if not is_valid:
-        t.config(highlightthickness=2, highlightbackground="#F87C63")
-        return
-    t.config(highlightthickness=0)
-
-
-def validate_textzone_with_sites(place: Text, inner: str, one_item=False, blank=True) -> bool:
-    """ Произвести валидацию данных в инпуте, где содержится один или несколько url,
-     стилизировать инпут согласно валидности,
-      вернуть логическое значение """
-    if type(inner) is not str:
-        raise TypeError
-    if not isinstance(place, Text):
-        raise TypeError
-    if type(blank) is not bool:
-        raise TypeError
-    if not inner:
-        if blank:
-            set_validation_text_obj(place)
-            return True
-        set_validation_text_obj(place, is_valid=False)
-        return False
-    if type(one_item) is not bool:
-        raise TypeError
-    reg = re.compile(r"^https://\S+\.\S+/$")
-    if one_item:
-        if not reg.match(inner):
-            set_validation_text_obj(place, is_valid=False)
-            return False
-        set_validation_text_obj(place)
-        return True
-    valid = False
-    for site_path in inner.split(TEXT_SEP):
-        if not reg.match(site_path):
-            set_validation_text_obj(place, is_valid=False)
-            break
-    else:
-        set_validation_text_obj(place)
-        valid = True
-    return valid
-
-
-def validate_number_text(place: Text, inner: str, max_=float("inf"), type_=int):
-    if not type_ == int and not type_ == float:
-        raise TypeError
-    if not isinstance(max_, (int, float,)):
-        raise TypeError
-    if type(place) is not Text:
-        raise TypeError
-    if type(inner) is not str:
-        raise TypeError
-    if not inner:
-        set_validation_text_obj(place)
-        return True
-    if type_ is float:
-        if "." in inner:
-            try:
-                float(inner)
-            except ValueError:
-                set_validation_text_obj(place, is_valid=False)
-                return False
-        else:
-            set_validation_text_obj(place, is_valid=False)
-            return False
-    try:
-        inner = type_(inner)
-    except ValueError:
-        set_validation_text_obj(place, is_valid=False)
-        return False
-    if inner > max_:
-        set_validation_text_obj(place, is_valid=False)
-        return False
-    set_validation_text_obj(place)
-    return True
-
-
-def save_text_value_if_valid(t, key: str, data: str, one_item=False, blank=False, **kwargs):
-    if not isinstance(t, Text):
-        raise TypeError
-    if type(key) is not str:
-        raise TypeError
-    if type(data) is not str:
-        raise TypeError
-    if not blank:
-        if not data:
-            return
-    is_valid = validate_textzone_with_sites(t, data, blank=blank, one_item=one_item, **kwargs)
-    if not is_valid:
-        return
-    if not one_item:
-        data = data.split(TEXT_SEP)
-    set_(key, data)
-
-
-def save_number_values_if_valid(t, key: str, value: str, **kw):
-    if not isinstance(t, Text):
-        raise TypeError
-    if type(key) is not str:
-        raise TypeError
-    if not isinstance(value, str):
-        raise TypeError
-    is_valid = validate_number_text(t, value, **kw)
-    if not is_valid:
-        return
-    if not value:
-        set_(key, "")
-        return
-    if value.isdigit():
-        value = int(value)
-    else:
-        value = float(value)
-    set_(key, value)
     
     
 class BaseOptions:
@@ -149,19 +43,31 @@ class BaseOptions:
     def __init__(self, tk, *args, **kwargs):
         def handle_window_buttons():
             """ Из-за функционала связанного с иконкой трея придётся изменить стандартное поведение кнопок [ _ [] X ] окна """
-            is_active_task = get("active_task")
+            is_active_task = get("active_task", False)
             minimize(tk, reload_menu=not is_active_task, options_disabled=is_active_task)
         tk.protocol("WM_DELETE_WINDOW", handle_window_buttons)
         super().__init__(tk, *args, **kwargs)
 
     @staticmethod
-    def _set_events_number_text(place: Text, key: str, is_float=False, max_value=float("inf")):
+    def _check_settings(tk):
+        error_str = get_error_string_from_settings()
+        if not error_str:
+            return
+        show_message_window(tk, title="Исправьте некоторые ошибки", text=error_str,
+                            size=get_alert_window_size(error_str))
+
+    @staticmethod
+    def _set_events_number_text(place: Text, key: str, is_float=False, min_value: Union[float, int] = 0,
+                                max_value=float("inf")):
         place.bind("<FocusOut>", lambda _: save_number_values_if_valid(place, key, get_text_from_text_obj(place),
-                                                                       max_=max_value, type_=float if is_float else int))
+                                                                       min_=min_value, max_=max_value,
+                                                                       type_=float if is_float else int))
         place.bind("<FocusIn>", lambda _: validate_number_text(place, get_text_from_text_obj(place),
-                                                               max_=max_value, type_=float if is_float else int))
-        place.bind("<Key>", lambda _: validate_number_text(place, get_text_from_text_obj(place),
-                                                           max_=max_value, type_=float if is_float else int))
+                                                               min_=min_value, max_=max_value,
+                                                               type_=float if is_float else int))
+        place.bind("<KeyPress>", lambda _: validate_number_text(place, get_text_from_text_obj(place),
+                                                                min_=min_value, max_=max_value,
+                                                                type_=float if is_float else int))
 
     @staticmethod
     def _toggle_checkbox(place: Union[IntVar, StringVar], key: str):
@@ -179,28 +85,30 @@ class BaseOptions:
 
 class MainFrame(BaseOptions, Frame):
     def __init__(self, tk, *args, init_run_task=False, **kwargs):
-        self.worker: typing.Optional[threading.Thread] = None
-
         def run_task():
-            if self.worker is not None:
-                raise RuntimeError("Один процесс уже запущен")
-
             def stop_callback():
+                global worker
                 unlock_ui()
+                worker = None
                 create_icon_or_update(tk, reload_menu=True, options_disabled=False)
+            global worker
+            if worker is not None:
+                raise RuntimeError("Один процесс уже запущен")
+            self._check_settings(tk)
+            if get_error_string_from_settings():
+                return
             worker = run(callback=self.move_state_window, stop_callback=stop_callback)
             self.move_state_window(f"< Процесс {worker.ident} запущен > {datetime.datetime.now().strftime('%H:%M:%S')}")
-            tk.geometry("560x275")
+            center_window(tk, width=560, height=175)
             lock_ui()
-            create_icon_or_update(tk, reload_menu=True, options_disabled=True)
-            self.worker = worker
+            create_icon_or_update(tk, reload_menu=True, options_disabled=True, create_icon=False)
 
         def stop_task():
-            if self.worker is None:
+            if worker is None:
                 raise RuntimeError("Процесс не найден")
             stop()
             self.stop_button.config(state="disabled")
-            self.move_state_window(f"< Процесс {self.worker.ident} ожидание завершения > "
+            self.move_state_window(f"< Процесс {worker.ident} ожидание завершения > "
                                    f"{datetime.datetime.now().strftime('%H:%M:%S')}")
 
         def lock_ui():
@@ -213,7 +121,7 @@ class MainFrame(BaseOptions, Frame):
             self.options_button.config(state="normal")
             self.stop_button.config(state="disabled")
         super().__init__(tk, *args, **kwargs)
-        tk.geometry("350x26")
+        center_window(tk, width=230, height=26)
         self.launch_button = Button(self, text="Пуск", command=run_task)
         self.stop_button = Button(self, text="Стоп", command=stop_task)
         self.options_button = Button(self, text="Настройки", command=lambda: change_frame(tk, self, OptionsFrame))
@@ -248,8 +156,14 @@ class OptionsFrame(BaseOptions, Frame):
         def autostart():
             value = self._toggle_checkbox(auto_launch_chbx, "auto_l")
             set_autostart(state=value)
+
+        def leave_frame(target):
+            if get_error_string_from_settings():
+                self._check_settings(tk)
+                return
+            change_frame(tk, self, target)
         super().__init__(tk, *a, **k)
-        tk.geometry("500x360")
+        center_window(tk, width=500, height=360)
         Label(self, text="Сайты, которых нет в белых списках:").grid(column=1, row=1)
         text_n_wl = Text(self, width=20, height=10)
         text_n_wl.grid(column=2, row=1)
@@ -276,20 +190,20 @@ class OptionsFrame(BaseOptions, Frame):
         Checkbutton(self, text="Автозагрузка", onvalue=1, offvalue=0,
                     variable=auto_launch_chbx,
                     command=autostart).grid(column=1, row=7)
-        Button(self, text="Дополнительно", command=lambda: change_frame(tk, self, NotifyOptionsFrame)).grid(column=1, row=8)
-        Button(self, text="Главная", command=lambda: change_frame(tk, self, MainFrame)).grid(column=2, row=8)
+        Button(self, text="Дополнительно", command=lambda: leave_frame(NotifyOptionsFrame)).grid(column=1, row=8)
+        Button(self, text="Главная", command=lambda: leave_frame(MainFrame)).grid(column=2, row=8)
         self._set_initial_text_input_values(text_n_wl, "text_n_wl")
         self._set_initial_text_input_values(text_any_wl, "text_any_wl")
         self._set_initial_text_input_values(text_interval, "text_interval")
         self._set_initial_text_input_values(text_error_counter, "text_error_counter")
         self._set_initial_text_input_values(text_timeout, "text_timeout")
         self._set_events_number_text(text_timeout, "text_timeout", is_float=True,
-                                     max_value=get("text_interval", float("inf")))
+                                     max_value=float(get("text_interval", 0)), min_value=1.0)
         self._set_events_site_list(text_n_wl, "text_n_wl")
         self._set_events_site_list(text_any_wl, "text_any_wl", one_site=True)
-        self._set_events_number_text(text_interval, "text_interval")
+        self._set_events_number_text(text_interval, "text_interval", min_value=1, max_value=20)
         self._set_events_number_text(text_error_counter, "text_error_counter",
-                                     max_value=len(get("text_n_wl", "")))
+                                     max_value=len(get("text_n_wl", "")), min_value=1)
 
     @staticmethod
     def _set_events_site_list(place: Text, key: str, one_site=False, blank=False):
@@ -297,8 +211,8 @@ class OptionsFrame(BaseOptions, Frame):
                                                                     one_item=one_site, blank=blank))
         place.bind("<FocusIn>", lambda _: validate_textzone_with_sites(place, get_text_from_text_obj(place),
                                                                        one_item=one_site))
-        place.bind("<Key>", lambda _: validate_textzone_with_sites(place, get_text_from_text_obj(place),
-                                                                   one_item=one_site))
+        place.bind("<KeyPress>", lambda _: validate_textzone_with_sites(place, get_text_from_text_obj(place),
+                                                                        one_item=one_site))
 
 
 class NotifyOptionsFrame(BaseOptions, Frame):
@@ -308,9 +222,8 @@ class NotifyOptionsFrame(BaseOptions, Frame):
         Label(self, text="Уровень громкости уведомлений:").grid(column=1, row=1)
         radio_button_v = StringVar(self, get("volume", "1"))
         radio_button_values = {
-            "Полная": "1",
-            "Тихая": "2",
-            "Без звука": "3",
+            "Звук": "1",
+            "Без звука": "2",
         }
         for index, values in enumerate(radio_button_values.items(), start=1):
             text, val = values

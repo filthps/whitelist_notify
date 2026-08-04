@@ -1,5 +1,4 @@
 from tkinter import Tk
-from base.main import run
 from base.storage import get, set_
 from base.frames import MainFrame
 from base.tray import minimize
@@ -13,6 +12,5 @@ if __name__ == "__main__":
     frame.grid()
     if get("launch_h"):
         minimize(base, reload_menu=False)
-    else:
-        base.eval('tk::PlaceWindow . center')
+    base.resizable(False, False)
     base.mainloop()

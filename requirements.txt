@@ -1,7 +1,10 @@
 altgraph==0.17.5
 packaging==26.2
 pefile==2024.8.26
+pillow==12.3.0
 pyinstaller==6.21.0
 pyinstaller-hooks-contrib==2026.6
+pystray==0.19.5
 pywin32-ctypes==0.2.3
+six==1.17.0
 winotify==1.1.0
