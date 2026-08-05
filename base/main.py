@@ -28,7 +28,76 @@ sites = cycle([])
 worker_is_alive = True
 
 
+def main(callback=None, stop_callback=None):
+    global worker_is_alive
+    worker_is_alive = True
+
+    @launch_callback
+    def stop_():
+        stop_callback() if callable(stop_callback) else None
+        set_("active_task", False)
+
+    @launch_callback
+    def start():
+        set_("active_task", True)
+
+    check_online = not get_current_state()
+    if check_online:
+        send_state(callback, other_message="Ожидаем появление доступа в нормальный интернет...")
+    else:
+        send_state(callback, other_message="Доступ к нормальному интернету есть, \n мониторим момент введения белых списков")
+    Event().wait(INTERVAL_SEC)
+    checked_sites = set()
+    start()
+    while True:
+        if not worker_is_alive:
+            send_state(callback,
+                       other_message=f"< Процесс {current_thread().ident} убит> "
+                                     f"{datetime.datetime.now().strftime('%H:%M:%S')}", )
+            stop_()
+            sys.exit()
+        current_path = next(sites)
+        request = create_request(current_path)
+        if isinstance(request, (URLError, HTTPError,)):
+            send_state(callback, current_path, str(request))
+        else:
+            send_state(callback, current_path, request.code)
+        if not isinstance(request, (HTTPError, URLError,)) and request.msg == "OK":
+            if check_online:
+                checked_sites.add(current_path)
+                if checked_sites.__len__() == ERRORS_COUNTER_TO_SHOW_MSG:
+                    show_notification(True, websites=tuple(checked_sites))
+                    stop_() if stop_callback else None
+                    send_state(callback,
+                               other_message=f"< Процесс {current_thread().ident} убит> "
+                                             f"{datetime.datetime.now().strftime('%H:%M:%S')}")
+            else:
+                checked_sites.remove(current_path) if current_path in checked_sites else None
+        else:
+            if not check_online:
+                checked_sites.add(current_path)
+                if ERRORS_COUNTER_TO_SHOW_MSG == len(checked_sites):
+                    send_state(callback,
+                               other_message=f"< Финальная проверка доступности {ANY_WHITELIST_SITE} > "
+                                             f"{datetime.datetime.now().strftime('%H:%M:%S')}")
+                    if not final_check():
+                        show_notification(False, websites=tuple(checked_sites))
+                        stop_() if stop_callback else None
+                        send_state(callback,
+                                   other_message=f"< Процесс {current_thread().ident} убит> "
+                                                 f"{datetime.datetime.now().strftime('%H:%M:%S')}", center=True)
+                    else:
+                        checked_sites = set()
+                        send_state(callback,
+                                   other_message=f"< Финальная проверка OK, продолжаем мониторить > "
+                                                 f"{datetime.datetime.now().strftime('%H:%M:%S')}")
+            else:
+                checked_sites.remove(current_path) if current_path in checked_sites else None
+        Event().wait(INTERVAL_SEC)
+
+
 def launch_callback(call):
+    """ Блокировка потока для передачи данных главному потоку """
     def wrap(*a, main_thread=False, **kwargs):
         if main_thread:
             call(*a, **kwargs)
@@ -41,67 +110,33 @@ def launch_callback(call):
 
 
 @launch_callback
+def show_notification(state: bool, websites=tuple()):
+    def get_str(u: typing.Iterable) -> str:
+        return ", \n".join([x[8:x.rindex(".")] for x in u])
+    if not websites:
+        return
+    end = "лись" if len(websites) > 1 else "лся"
+    if state:
+        n = Notification(app_id="Интернет детектор by filthps",
+                         title="Дали интернет!", msg=f"Наконец-то. \n{get_str(websites)} откры{end}.",
+                         icon=os.path.join(IMAGES_PATH, "wl-off.png"))
+    else:
+        n = Notification(app_id="Интернет детектор by filthps",
+                         title="Белые списки!", msg=f"Охуеть. Опять эти пидоры всё отключили к хуям. \n"
+                                                    f"{get_str(websites)} не откры{end}.",
+                         icon=os.path.join(IMAGES_PATH, "wl-on.png"))
+    if NOTI_VOLUME == "1":
+        n.set_audio(audio.LoopingAlarm6 if state else audio.LoopingCall9, loop=IS_LONG_NOTI)
+    if NOTI_VOLUME == "2":
+        n.set_audio(audio.Silent, False)
+    n.show()
+
+
+@launch_callback
 def send_state(callback, *args, other_message=""):
     """ Сформировать строку состояния и передать её главному потоку, в ui, обновив виджет состояния. """
     str_ = other_message or " ---- ".join(map(str, args))
     callback(str_)
-
-
-def main(callback=None, stop_callback=None):
-    global worker_is_alive
-    worker_is_alive = True
-
-    @launch_callback
-    def stop_():
-        stop_callback() if callable(stop_callback) else None
-    check_online = not get_current_state()
-    if check_online:
-        send_state(callback, other_message="Ожидаем появление доступа в нормальный интернет...")
-    else:
-        send_state(callback, other_message="Доступ к нормальному интернету есть, \n мониторим момент введения белых списков")
-    Event().wait(INTERVAL_SEC)
-    checked_sites = []
-    while True:
-        if not worker_is_alive:
-            send_state(callback,
-                       other_message=f"< Процесс {current_thread().ident} убит> "
-                                     f"{datetime.datetime.now().strftime('%H:%M:%S')}", )
-            if stop_callback:
-                stop_()
-            set_("active_task", False)
-            sys.exit()
-        current_path = next(sites)
-        request = create_request(current_path)
-        if isinstance(request, (URLError, HTTPError,)):
-            send_state(callback, current_path, str(request))
-        else:
-            send_state(callback, current_path, request.code)
-        if not isinstance(request, (HTTPError, URLError,)) and request.msg == "OK":
-            if check_online:
-                checked_sites.append(current_path)
-                if checked_sites.__len__() == ERRORS_COUNTER_TO_SHOW_MSG:
-                    show_notification(True, websites=tuple(checked_sites))
-                    stop_() if stop_callback else None
-                    send_state(callback,
-                               other_message=f"< Процесс {current_thread().ident} убит> "
-                                             f"{datetime.datetime.now().strftime('%H:%M:%S')}")
-            else:
-                checked_sites.remove(current_path) if current_path in checked_sites else None
-        else:
-            if not check_online:
-                checked_sites.append(current_path)
-                if ERRORS_COUNTER_TO_SHOW_MSG == len(checked_sites):
-                    if not final_check():
-                        show_notification(False, websites=tuple(checked_sites))
-                        stop_() if stop_callback else None
-                        send_state(callback,
-                                   other_message=f"< Процесс {current_thread().ident} убит> "
-                                                 f"{datetime.datetime.now().strftime('%H:%M:%S')}", center=True)
-                    else:
-                        checked_sites = []
-            else:
-                checked_sites.remove(current_path) if current_path in checked_sites else None
-        Event().wait(INTERVAL_SEC)
 
 
 def create_request(path: str):
@@ -120,28 +155,6 @@ def final_check() -> bool:
      Тогда нужно проверить доступность любого сайта, который есть в белых списках """
     request = create_request(ANY_WHITELIST_SITE)
     return not isinstance(URLError, HTTPError) and request.msg == "OK"
-
-
-def show_notification(state: bool, websites=tuple()):
-    def get_str(u: typing.Iterable) -> str:
-        return ", \r".join([x[8:x.rindex(".")] for x in u])
-    if not websites:
-        return
-    end = "лись" if len(websites) > 1 else "лся"
-    if state:
-        n = Notification(app_id="Интернет детектор by filthps",
-                         title="Дали интернет!", msg=f"Наконец-то. \r{get_str(websites)} откры{end}.",
-                         icon=os.path.join(IMAGES_PATH, "wl-off.png"))
-    else:
-        n = Notification(app_id="Интернет детектор by filthps",
-                         title="Белые списки!", msg=f"Охуеть. Опять эти пидоры всё отключили к хуям. \r"
-                                                    f"{get_str(websites)} не откры{end}.",
-                         icon=os.path.join(IMAGES_PATH, "wl-on.png"))
-    if NOTI_VOLUME == "1":
-        n.set_audio(audio.LoopingAlarm10, IS_LONG_NOTI)
-    if NOTI_VOLUME == "2":
-        n.set_audio(audio.Silent, False)
-    n.show()
 
 
 def get_current_state():
@@ -183,7 +196,6 @@ def run(callback=None, stop_callback=None) -> typing.Optional[Thread]:
         return
     process = Thread(target=lambda: main(callback=callback, stop_callback=stop_callback))
     process.start()
-    set_("active_task", True)
     return process
 
 

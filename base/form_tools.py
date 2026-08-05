@@ -22,8 +22,8 @@ def get_error_string_from_settings():
         error_text.append("5) Введите числовое значение 1-кол-во сайтов, указанных в поле 1.")
     if check_interval < get("text_timeout", 0.0):
         error_text.append("Периодичность запросов не может быть короче ожидания.")
-    i = len(get("text_n_wl"))
-    if i <= get("text_error_counter"):
+    i = len(get("text_n_wl", tuple()))
+    if i <= get("text_error_counter", 0):
         error_text.append(f"Представленное количество ресурсов не из белых списков - 1), \n "
                           f"должно быть больше, чем указанная величина допустимых ошибок - 5) \n"
                           f"Сейчас всего ресурсов: {i}")
