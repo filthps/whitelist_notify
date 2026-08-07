@@ -3,7 +3,22 @@
 Системные оповещения относительно введения или снятия белых списков для windows.
 
 ---
+
+![main](readme_images/base.png)
+
+Мониторим введение белых списков:
+
+![logic1](readme_images/logic1.png)
+
+Мониторим доступ к свободному интернету:
+
+![logic2](readme_images/logic2.png)
+
 *Python 3.11*
+
+Скачать [exe](https://github.com/filthps/whitelist_notify/releases/) из <code>RAR</code>
+
+или
 
 1) create venv
 2) <code>pip install -r requirements.txt</code>
