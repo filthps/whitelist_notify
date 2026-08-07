@@ -2,7 +2,7 @@ import os
 import winreg
 
 KEY_NAME = "wl_detector"
-PACKAGE = ["dist", "ui.exe"]
+PACKAGE = "ui.exe"
 
 
 def autostart(state=False):
@@ -10,7 +10,7 @@ def autostart(state=False):
         :arg state: True добавить в автозагрузку, False удалить из автозагрузки
      """
     app = os.path.dirname(os.path.abspath(__file__))
-    app = os.path.join(app, os.path.join(*PACKAGE))
+    app = os.path.join(app, os.path.join(PACKAGE))
     reg = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0,
                          winreg.KEY_SET_VALUE)
     if state:

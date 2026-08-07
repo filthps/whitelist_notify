@@ -9,7 +9,7 @@ icon: Optional[Icon] = None
 
 def minimize(tk, reload_menu=True, options_disabled=False):
     tk.withdraw()
-    create_icon_or_update(tk, reload_menu=reload_menu, options_disabled=options_disabled)
+    create_icon_or_update(tk, reload_menu=reload_menu, options_disabled=options_disabled, create_icon=True)
 
 
 def open_from_tray(tk, new_frame=None):
@@ -33,18 +33,17 @@ def create_icon_or_update(tk, create_icon=True, options_disabled=False, reload_m
     from base.frames import OptionsFrame
     global icon
     if icon is None:
-        if not create_icon:
-            return
-        menu = Menu(
-            MenuItem("Открыть", lambda: open_from_tray(tk), default=True),
-            MenuItem("Настройки", lambda: open_from_tray(tk, new_frame=OptionsFrame),
-                     enabled=not options_disabled),
-            MenuItem("Выход", lambda: close_app(tk, icon))
-        )
-        image = Image.open(os.path.join(IMAGES_PATH, "tray.png"))
-        image.resize((10, 10,), Image.NEAREST)
-        icon = Icon("Детектор белых списков", icon=image, title="Детектор белых списков", menu=menu)
-        icon.run()
+        if create_icon:
+            menu = Menu(
+                MenuItem("Открыть", lambda: open_from_tray(tk), default=True),
+                MenuItem("Настройки", lambda: open_from_tray(tk, new_frame=OptionsFrame),
+                         enabled=not options_disabled),
+                MenuItem("Выход", lambda: close_app(tk, icon))
+            )
+            image = Image.open(os.path.join(IMAGES_PATH, "tray.png"))
+            image.resize((10, 10,), Image.NEAREST)
+            icon = Icon("Детектор белых списков", icon=image, title="Детектор белых списков", menu=menu)
+            icon.run()
         return
     if reload_menu:
         icon.menu = Menu(

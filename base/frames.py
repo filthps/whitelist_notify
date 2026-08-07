@@ -97,9 +97,9 @@ class MainFrame(BaseOptions, Frame):
             self._check_settings(tk)
             if get_error_string_from_settings():
                 return
+            center_window(tk, width=638, height=175)
             worker = run(callback=self.move_state_window, stop_callback=stop_callback)
             self.move_state_window(f"< Процесс {worker.ident} запущен > {datetime.datetime.now().strftime('%H:%M:%S')}")
-            center_window(tk, width=560, height=175)
             lock_ui()
             create_icon_or_update(tk, reload_menu=True, options_disabled=True, create_icon=False)
 
@@ -146,7 +146,7 @@ class MainFrame(BaseOptions, Frame):
         place.config(state="disabled")
 
     def __get_state_window(self):
-        place = Text(self, height=9, width=50)
+        place = Text(self, height=9, width=60)
         place.config(background="#CCC")
         return place
 
@@ -163,12 +163,12 @@ class OptionsFrame(BaseOptions, Frame):
                 return
             change_frame(tk, self, target)
         super().__init__(tk, *a, **k)
-        center_window(tk, width=500, height=380)
+        center_window(tk, width=500, height=505)
         Label(self, text="Сайты, которых нет в белых списках:\n https://exemple-name.com/, через ,").grid(column=1, row=1)
         text_n_wl = Text(self, width=20, height=10)
         text_n_wl.grid(column=2, row=1)
-        Label(self, text="Сайт, который есть в белых списках:\n https://exemple-name.com/").grid(column=1, row=2)
-        text_any_wl = Text(self, width=20, height=1)
+        Label(self, text="Сайты, которе есть в белых списках:\n https://exemple-name.com/, через ,").grid(column=1, row=2)
+        text_any_wl = Text(self, width=20, height=10)
         text_any_wl.grid(column=2, row=2)
         Label(self, text="Интервал проверки (сек):").grid(column=1, row=3)
         text_interval = Text(self, width=3, height=1)
@@ -193,14 +193,14 @@ class OptionsFrame(BaseOptions, Frame):
         Button(self, text="Дополнительно", command=lambda: leave_frame(NotifyOptionsFrame)).grid(column=1, row=8)
         Button(self, text="Главная", command=lambda: leave_frame(MainFrame)).grid(column=2, row=8)
         self._set_initial_text_input_values(text_n_wl, "text_n_wl")
-        self._set_initial_text_input_values(text_any_wl, "text_any_wl")
+        self._set_initial_text_input_values(text_any_wl, "text_wl")
         self._set_initial_text_input_values(text_interval, "text_interval")
         self._set_initial_text_input_values(text_error_counter, "text_error_counter")
         self._set_initial_text_input_values(text_timeout, "text_timeout")
         self._set_events_number_text(text_timeout, "text_timeout", is_float=True,
                                      max_value=float(get("text_interval", 0)), min_value=1.0)
         self._set_events_site_list(text_n_wl, "text_n_wl")
-        self._set_events_site_list(text_any_wl, "text_any_wl", one_site=True)
+        self._set_events_site_list(text_any_wl, "text_wl")
         self._set_events_number_text(text_interval, "text_interval", min_value=1, max_value=20)
         self._set_events_number_text(text_error_counter, "text_error_counter",
                                      max_value=len(get("text_n_wl", "")), min_value=1)

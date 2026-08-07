@@ -12,8 +12,6 @@ def get_error_string_from_settings():
     check_interval = get("text_interval", 0)
     if not get("text_n_wl"):
         error_text.append("1) Поле с сайтами не из White List не может быть пустым.")
-    if not get("text_any_wl"):
-        error_text.append("2) Введите один сайт из White List.")
     if not check_interval:
         error_text.append("3) Введите числовое значение 1-20. Интервал запросов в секундах.")
     if not get("text_timeout"):
@@ -22,14 +20,26 @@ def get_error_string_from_settings():
         error_text.append("5) Введите числовое значение 1-кол-во сайтов, указанных в поле 1.")
     if check_interval < get("text_timeout", 0.0):
         error_text.append("Периодичность запросов не может быть короче ожидания.")
-    i = len(get("text_n_wl", tuple()))
-    if i <= get("text_error_counter", 0):
-        error_text.append(f"Представленное количество ресурсов не из белых списков - 1), \n "
-                          f"должно быть больше, чем указанная величина допустимых ошибок - 5) \n"
-                          f"Сейчас всего ресурсов: {i}")
-    if MIN_INTERVAL_PER_ONE_SITE_SEC > i * check_interval:
-        error_text.append(f"Интервал обращений к одному конкретному ресурсу - {i * check_interval} сек, \n"
-                          f"что подозрительно часто. Интервал должен быть минимум - {MIN_INTERVAL_PER_ONE_SITE_SEC} секунд.")
+    no_wl_items_l = len(get("text_n_wl", tuple()))
+    wl_items_l = len(get("text_wl", tuple()))
+    if not no_wl_items_l:
+        error_text.append("Не представлено ни одно веб-ресурса не из белых списков")
+    else:
+        if no_wl_items_l <= get("text_error_counter", 0):
+            error_text.append(f"Представленное количество ресурсов не из белых списков - 1), \n "
+                              f"должно быть больше, чем указанная величина допустимых ошибок - 5) \n"
+                              f"Сейчас всего ресурсов: {no_wl_items_l}")
+        if MIN_INTERVAL_PER_ONE_SITE_SEC > no_wl_items_l * check_interval:
+            error_text.append(f"Интервал обращений к одному конкретному ресурсу - {no_wl_items_l * check_interval} сек, \n"
+                              f"что подозрительно часто. Интервал должен быть минимум - {MIN_INTERVAL_PER_ONE_SITE_SEC} секунд."
+                              f"Добавьте больше адресов ресурсов не из белых списков")
+    if not wl_items_l:
+        error_text.append("Не представлено ни одно веб-ресурса из белых списков")
+    else:
+        if MIN_INTERVAL_PER_ONE_SITE_SEC > wl_items_l * check_interval:
+            error_text.append(f"Интервал обращений к одному конкретному ресурсу - {wl_items_l * check_interval} сек, \n"
+                              f"что подозрительно часто. Интервал должен быть минимум - {MIN_INTERVAL_PER_ONE_SITE_SEC} секунд."
+                              f"Добавьте больше адресов ресурсов из белых списков")
     return "\n".join(error_text)
 
 
