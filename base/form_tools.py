@@ -39,7 +39,10 @@ def get_error_string_from_settings():
 
 def get_alert_window_size(inner: str):
     inner = inner.split("\n")
-    return "x".join((str(max(map(len, inner)) * 8), str(len(inner) * 30)))
+    width = max(map(len, inner)) * 8
+    if len(inner) == 1:
+        return f"{width}x55"
+    return "x".join((str(width), str(len(inner) * 30)))
 
 
 def get_text_from_text_obj(t: Text):
