@@ -16,7 +16,6 @@ from winotify import Notification, audio
 from base.storage import get, set_
 
 INTERVAL_SEC = get("text_interval")
-ERRORS_COUNTER_TO_SHOW_MSG = get("text_error_counter")
 TIMEOUT_MS = get("text_timeout")
 NO_WL_SITE = get("text_n_wl")
 WHITELIST_SITE = get("text_wl")
@@ -63,7 +62,7 @@ def main(callback=None, stop_callback=None):
                                      f"{datetime.datetime.now().strftime('%H:%M:%S')}", )
             stop_()
             sys.exit()
-        if len(checked_sites) < ERRORS_COUNTER_TO_SHOW_MSG:
+        if len(checked_sites) < NO_WL_SITE.__len__():
             current_path = next(sites)
             request = create_request(current_path)
         if not isinstance(request, (HTTPError, URLError, timeout_exc,)) and request.msg == "OK":
@@ -78,10 +77,10 @@ def main(callback=None, stop_callback=None):
                 checked_sites.remove(current_path) if current_path in checked_sites else None
         else:
             if not check_online:
-                if len(checked_sites) < ERRORS_COUNTER_TO_SHOW_MSG:
+                if len(checked_sites) < NO_WL_SITE.__len__():
                     send_state(callback, current_path, str(request))
                 checked_sites.add(current_path)
-                if ERRORS_COUNTER_TO_SHOW_MSG == len(checked_sites):
+                if NO_WL_SITE.__len__() == len(checked_sites):
                     current_path_wl = next(white_list_sites)
                     send_state(callback,
                                other_message=f"< Проверка доступности белых списков {current_path_wl} > "
@@ -180,7 +179,6 @@ def check_available_any_resource(items):
 
 def load_const():
     global INTERVAL_SEC
-    global ERRORS_COUNTER_TO_SHOW_MSG
     global TIMEOUT_MS
     global NO_WL_SITE
     global WHITELIST_SITE
@@ -188,7 +186,6 @@ def load_const():
     global NOTI_VOLUME
 
     INTERVAL_SEC = get("text_interval")
-    ERRORS_COUNTER_TO_SHOW_MSG = get("text_error_counter")
     TIMEOUT_MS = get("text_timeout")
     NO_WL_SITE = get("text_n_wl")
     WHITELIST_SITE = get("text_wl")
@@ -222,14 +219,8 @@ def is_valid():
         raise TypeError
     if INTERVAL_SEC <= 0:
         raise ValueError
-    if type(ERRORS_COUNTER_TO_SHOW_MSG) is not int:
-        raise TypeError
-    if ERRORS_COUNTER_TO_SHOW_MSG < 0:
-        raise ValueError
     if TIMEOUT_MS // 1000 >= INTERVAL_SEC:
         raise RuntimeError("Таймаут ожидания ответа не может быть дольше периодичности проверки")
-    if ERRORS_COUNTER_TO_SHOW_MSG >= len(NO_WL_SITE):
-        raise ValueError()
     if any(filter(lambda i: not isinstance(i, str), NO_WL_SITE)):
         raise TypeError
     regexp = re.compile(r"^https://\S+\.\S+/$")

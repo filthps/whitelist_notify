@@ -16,8 +16,6 @@ def get_error_string_from_settings():
         error_text.append("3) Введите числовое значение 1-20. Интервал запросов в секундах.")
     if not get("text_timeout"):
         error_text.append("4) Введите допустимую задержку ответа.")
-    if not get("text_error_counter"):
-        error_text.append("5) Введите числовое значение 1-кол-во сайтов, указанных в поле 1.")
     if check_interval < get("text_timeout", 0.0):
         error_text.append("Периодичность запросов не может быть короче ожидания.")
     no_wl_items_l = len(get("text_n_wl", tuple()))
@@ -25,10 +23,6 @@ def get_error_string_from_settings():
     if not no_wl_items_l:
         error_text.append("Не представлено ни одно веб-ресурса не из белых списков")
     else:
-        if no_wl_items_l <= get("text_error_counter", 0):
-            error_text.append(f"Представленное количество ресурсов не из белых списков - 1), \n "
-                              f"должно быть больше, чем указанная величина допустимых ошибок - 5) \n"
-                              f"Сейчас всего ресурсов: {no_wl_items_l}")
         if MIN_INTERVAL_PER_ONE_SITE_SEC > no_wl_items_l * check_interval:
             error_text.append(f"Интервал обращений к одному конкретному ресурсу - {no_wl_items_l * check_interval} сек, \n"
                               f"что подозрительно часто. Интервал должен быть минимум - {MIN_INTERVAL_PER_ONE_SITE_SEC} секунд."
