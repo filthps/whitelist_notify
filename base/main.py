@@ -74,7 +74,7 @@ def main(callback=None, stop_callback=None):
                 show_notification(True, websites=(current_path,))
                 stop()
             else:
-                checked_sites.remove(current_path) if current_path in checked_sites else None
+                checked_sites = set()
         else:
             if not check_online:
                 if len(checked_sites) < NO_WL_SITE.__len__():
