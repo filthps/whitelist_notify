@@ -1,6 +1,3 @@
-import datetime
-import threading
-import typing
 import tkinter
 from typing import Union
 from tkinter import Text, IntVar, StringVar
@@ -11,8 +8,6 @@ from base.tray import minimize, create_icon_or_update
 from base.autostart import autostart as set_autostart
 from base.form_tools import save_text_value_if_valid, save_number_values_if_valid, get_text_from_text_obj, \
     validate_number_text, validate_textzone_with_sites, get_error_string_from_settings, get_alert_window_size, TEXT_SEP
-
-worker: typing.Optional[threading.Thread] = None
 
 
 def center_window(main: tkinter, width=500, height=500):
@@ -87,29 +82,15 @@ class MainFrame(BaseOptions, Frame):
     def __init__(self, tk, *args, init_run_task=False, **kwargs):
         def run_task():
             def stop_callback():
-                global worker
                 unlock_ui()
-                worker = None
                 create_icon_or_update(tk, reload_menu=True, options_disabled=False)
-            global worker
-            if worker is not None:
-                raise RuntimeError("Один процесс уже запущен")
             self._check_settings(tk)
             if get_error_string_from_settings():
                 return
             center_window(tk, width=638, height=175)
-            worker = run(callback=self.move_state_window, stop_callback=stop_callback)
-            self.move_state_window(f"< Процесс {worker.ident} запущен > {datetime.datetime.now().strftime('%H:%M:%S')}")
+            run(self.move_state_window, stop_callback=stop_callback)
             lock_ui()
             create_icon_or_update(tk, reload_menu=True, options_disabled=True, create_icon=False)
-
-        def stop_task():
-            if worker is None:
-                raise RuntimeError("Процесс не найден")
-            stop()
-            self.stop_button.config(state="disabled")
-            self.move_state_window(f"< Процесс {worker.ident} ожидание завершения > "
-                                   f"{datetime.datetime.now().strftime('%H:%M:%S')}")
 
         def lock_ui():
             self.launch_button.config(state="disabled")
@@ -123,7 +104,7 @@ class MainFrame(BaseOptions, Frame):
         super().__init__(tk, *args, **kwargs)
         center_window(tk, width=230, height=26)
         self.launch_button = Button(self, text="Пуск", command=run_task)
-        self.stop_button = Button(self, text="Стоп", command=stop_task)
+        self.stop_button = Button(self, text="Стоп", command=lambda: stop(self.move_state_window))
         self.options_button = Button(self, text="Настройки", command=lambda: change_frame(tk, self, OptionsFrame))
         self.launch_button.grid(column=1, row=2)
         self.stop_button.grid(column=2, row=2)
@@ -135,15 +116,15 @@ class MainFrame(BaseOptions, Frame):
         unlock_ui()
 
     def move_state_window(self, new_msg, size=6):
-        place: Text = self.__get_state_window()
-        place.grid(column=2, row=1)
         if self.state_w_inner is None:
             self.state_w_inner = ["" for _ in range(size)]
         self.state_w_inner.insert(0, new_msg)
         del self.state_w_inner[-1]
+        place = self.__get_state_window()
         place.config(state="normal")
         place.insert("1.0", "\n".join(self.state_w_inner))
         place.config(state="disabled")
+        place.grid(column=2, row=1)
 
     def __get_state_window(self):
         place = Text(self, height=9, width=60)
@@ -209,7 +190,7 @@ class OptionsFrame(BaseOptions, Frame):
 class NotifyOptionsFrame(BaseOptions, Frame):
     def __init__(self, tk, *a, **k):
         super().__init__(tk, *a, **k)
-        tk.geometry("500x90")
+        tk.geometry("500x112")
         Label(self, text="Уровень громкости уведомлений:").grid(column=1, row=1)
         radio_button_v = StringVar(self, get("volume", "1"))
         radio_button_values = {
@@ -222,8 +203,11 @@ class NotifyOptionsFrame(BaseOptions, Frame):
                                        command=lambda: self._toggle_checkbox(radio_button_v, "volume"))
             radio_button.grid(column=index, row=2)
         long_sound_var = IntVar(value=get("is_long_song", 1))
+        cycle_task = IntVar(value=get("is_cycle_task", 0))
         Checkbutton(self, text="Звуковое уведомление ожидает действие пользователя",
                     variable=long_sound_var, command=lambda *_: self._toggle_checkbox(long_sound_var, "is_long_song"),
                     offvalue=0, onvalue=1).grid(column=1, row=3)
-        Button(self, text="Настройки", command=lambda: change_frame(tk, self, OptionsFrame)).grid(column=1, row=4)
-        Button(self, text="Главная", command=lambda: change_frame(tk, self, MainFrame)).grid(column=2, row=4)
+        Checkbutton(self, text="Запускать обратную проверку при срабатывании", variable=cycle_task, offvalue=0, onvalue=1,
+                    command=lambda *_: self._toggle_checkbox(cycle_task, "is_cycle_task")).grid(column=1, row=4)
+        Button(self, text="Настройки", command=lambda: change_frame(tk, self, OptionsFrame)).grid(column=1, row=5)
+        Button(self, text="Главная", command=lambda: change_frame(tk, self, MainFrame)).grid(column=2, row=5)

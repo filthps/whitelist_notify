@@ -2,11 +2,11 @@
 Напротив, запуск во время работы полноценного интернета, будет мониторить включение белых списков, выдав уведомление,
 что белые списки включены.
 """
-import sys
-import datetime
 import os
 import re
-import typing
+import sys
+import datetime
+from typing import Optional
 from threading import Thread, Lock, Event, current_thread
 from itertools import cycle
 from socket import timeout as timeout_exc
@@ -15,37 +15,44 @@ from urllib.error import HTTPError, URLError
 from winotify import Notification, audio
 from base.storage import get, set_
 
-INTERVAL_SEC = get("text_interval")
-TIMEOUT_MS = get("text_timeout")
-NO_WL_SITE = get("text_n_wl")
-WHITELIST_SITE = get("text_wl")
 IMAGES_PATH = os.path.join(os.getcwd(), "images")
 AUDIO_PATH = os.path.join(os.getcwd(), "audio")
-IS_LONG_NOTI = get("is_long_song")
-NOTI_VOLUME = get("volume")
+INTERVAL_SEC = ...
+TIMEOUT_MS = ...
+NO_WL_SITE = ...
+WHITELIST_SITE = ...
+IS_LONG_NOTI = ...
+NOTI_VOLUME = ...
+IS_CYCLIC = ...
 
+worker: Optional[Thread] = None
 worker_is_alive = True
 
 
-def main(callback=None, stop_callback=None):
+def freeze(call):
+    """ Блокировка потока для передачи данных главному потоку """
+    def inner(*a, **kwargs):
+        lock = Lock()
+        lock.acquire(blocking=True)
+        call(*a, **kwargs)
+        lock.release()
+    return inner
+
+
+def main(msg_box_getter, stop_callback=None):
     global worker_is_alive
     worker_is_alive = True
 
-    @launch_callback
-    def stop_():
+    @freeze
+    def exit_():
         stop_callback() if callable(stop_callback) else None
-        set_("active_task", False)
-        stop()
-
-    @launch_callback
-    def start():
-        set_("active_task", True)
-
+    send_state(msg_box_getter,
+               f"< Процесс {current_thread().ident} запущен > {datetime.datetime.now().strftime('%H:%M:%S')}")
     check_online = not check_available_any_resource(NO_WL_SITE)
     if check_online:
-        send_state(callback, other_message="Ожидаем появление доступа в нормальный интернет...")
+        send_state(msg_box_getter, other_message="Ожидаем появление доступа в нормальный интернет...")
     else:
-        send_state(callback, other_message="Доступ к нормальному интернету есть, \n мониторим момент введения белых списков")
+        send_state(msg_box_getter, other_message="Доступ к нормальному интернету есть, \n мониторим момент введения белых списков")
     checked_sites = set()
     checked_wl = set()
     sites = cycle(NO_WL_SITE)
@@ -53,36 +60,39 @@ def main(callback=None, stop_callback=None):
     current_path = ""
     request = ...
     white_list_call_counter = 0
-    start()
+    set_("active_task", True)
     Event().wait(INTERVAL_SEC)
     while True:
         if not worker_is_alive:
-            send_state(callback,
+            send_state(msg_box_getter,
                        other_message=f"< Процесс {current_thread().ident} убит> "
-                                     f"{datetime.datetime.now().strftime('%H:%M:%S')}", )
-            stop_()
+                                     f"{datetime.datetime.now().strftime('%H:%M:%S')}")
+            set_("active_task", False)
+            exit_()
             sys.exit()
         if len(checked_sites) < NO_WL_SITE.__len__():
             current_path = next(sites)
             request = create_request(current_path)
         if not isinstance(request, (HTTPError, URLError, timeout_exc,)) and request.msg == "OK":
-            send_state(callback, current_path, request.code)
+            send_state(msg_box_getter, current_path, request.code)
             if check_online:
-                send_state(callback,
-                           other_message=f"< Процесс {current_thread().ident} убит> "
-                                         f"{datetime.datetime.now().strftime('%H:%M:%S')}")
-                show_notification(True, websites=(current_path,))
-                stop()
+                send_notification(True, websites=(current_path,))
+                if IS_CYCLIC:
+                    Event().wait(INTERVAL_SEC)
+                    main(msg_box_getter, stop_callback=stop_callback)
+                    return
+                else:
+                    worker_is_alive = False
             else:
                 checked_sites = set()
         else:
             if not check_online:
                 if len(checked_sites) < NO_WL_SITE.__len__():
-                    send_state(callback, current_path, str(request))
+                    send_state(msg_box_getter, current_path, str(request))
                 checked_sites.add(current_path)
                 if NO_WL_SITE.__len__() == len(checked_sites):
                     current_path_wl = next(white_list_sites)
-                    send_state(callback,
+                    send_state(msg_box_getter,
                                other_message=f"< Проверка доступности белых списков {current_path_wl} > "
                                              f"{datetime.datetime.now().strftime('%H:%M:%S')}")
                     white_list_call_counter += 1
@@ -94,46 +104,27 @@ def main(callback=None, stop_callback=None):
                             continue
                         checked_wl.add(current_path_wl)
                         if checked_wl.__len__() == len(WHITELIST_SITE):
-                            show_notification(False)
-                            send_state(callback,
-                                       other_message=f"< Процесс {current_thread().ident} убит> "
-                                                     f"{datetime.datetime.now().strftime('%H:%M:%S')}", center=True)
-                            stop()
+                            send_notification(False)
+                            if IS_CYCLIC:
+                                Event().wait(INTERVAL_SEC)
+                                main(msg_box_getter, stop_callback=stop_callback)
+                                return
+                            else:
+                                worker_is_alive = False
                     else:
                         checked_wl.remove(current_path_wl) if current_path_wl in checked_wl else None
-            else:
-                checked_sites.remove(current_path) if current_path in checked_sites else None
         Event().wait(INTERVAL_SEC)
 
 
-def launch_callback(call):
-    """ Блокировка потока для передачи данных главному потоку """
-    def wrap(*a, main_thread=False, **kwargs):
-        if main_thread:
-            call(*a, **kwargs)
-            return
-        lock = Lock()
-        lock.acquire(blocking=True)
-        call(*a, **kwargs)
-        lock.release()
-    return wrap
-
-
-@launch_callback
-def show_notification(state: bool, websites=tuple()):
-    def get_str(u: typing.Iterable) -> str:
-        return ", \n".join([x[8:x.rindex(".")] for x in u])
-    if not websites:
-        return
-    end = "лись" if len(websites) > 1 else "лся"
+@freeze
+def send_notification(state: bool):
     if state:
         n = Notification(app_id="Интернет детектор by filthps",
-                         title="Дали интернет!", msg=f"Наконец-то. \n{get_str(websites)} откры{end}.",
+                         title="Дали интернет!", msg=f"Наконец-то.",
                          icon=os.path.join(IMAGES_PATH, "wl-off.png"))
     else:
         n = Notification(app_id="Интернет детектор by filthps",
-                         title="Белые списки!", msg=f"Охуеть. Опять эти пидоры всё отключили к хуям. \n"
-                                                    f"{get_str(websites)} не откры{end}.",
+                         title="Белые списки!", msg=f"Охуеть. Опять эти пидоры всё отключили к хуям.",
                          icon=os.path.join(IMAGES_PATH, "wl-on.png"))
     if NOTI_VOLUME == "1":
         n.set_audio(audio.LoopingAlarm6 if state else audio.LoopingCall9, loop=IS_LONG_NOTI)
@@ -142,11 +133,10 @@ def show_notification(state: bool, websites=tuple()):
     n.show()
 
 
-@launch_callback
-def send_state(callback, *args, other_message=""):
-    """ Сформировать строку состояния и передать её главному потоку, в ui, обновив виджет состояния. """
+@freeze
+def send_state(msg_box_getter, *args, other_message=""):
     str_ = other_message or " ---- ".join(map(str, args))
-    callback(str_)
+    msg_box_getter(str_)
 
 
 def create_request(path: str):
@@ -184,6 +174,7 @@ def load_const():
     global WHITELIST_SITE
     global IS_LONG_NOTI
     global NOTI_VOLUME
+    global IS_CYCLIC
 
     INTERVAL_SEC = get("text_interval")
     TIMEOUT_MS = get("text_timeout")
@@ -191,22 +182,26 @@ def load_const():
     WHITELIST_SITE = get("text_wl")
     IS_LONG_NOTI = get("is_long_song")
     NOTI_VOLUME = get("volume", "1")
+    IS_CYCLIC = get("is_cycle_task", False)
 
 
-def run(callback=None, stop_callback=None) -> typing.Optional[Thread]:
+def run(msg_box_getter, **k):
+    global worker
     load_const()
     try:
         is_valid()
     except Exception as exp:
-        send_state(callback, other_message=exp.__str__(), main_thread=True)
+        send_state(msg_box_getter, other_message=exp.__str__())
         return
-    process = Thread(target=lambda: main(callback=callback, stop_callback=stop_callback))
+    process = Thread(target=main, args=(msg_box_getter,), kwargs=k)
     process.start()
-    return process
+    worker = process
 
 
-def stop():
+def stop(text_place_getter: callable):
     global worker_is_alive
+    send_state(text_place_getter, f"< Процесс {worker.ident} ожидание завершения > "
+                                  f"{datetime.datetime.now().strftime('%H:%M:%S')}")
     worker_is_alive = False
 
 
